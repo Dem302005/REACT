@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Планувальник завдань роботизованих платформ</title>
+<script src="https://unpkg.com/react@17.0.2/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@17.0.2/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/react-router-dom@5.3.4/umd/react-router-dom.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.0/babel.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+body { background: #f0f2f5; color: #333; }
+.app { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+.sidebar { background: #2c3e50; color: white; padding: 20px; }
+.logo { font-size: 18px; font-weight: bold; margin-bottom: 25px; line-height: 1.3; }
+.nav-item { display: block; padding: 12px; margin: 5px 0; border-radius: 5px; color: white; text-decoration: none; }
+.nav-item:hover { background: #34495e; }
+.nav-item.active { background: #3498db; }
+.content { padding: 25px; }
+h1 { font-size: 24px; margin-bottom: 15px; }
+h2 { font-size: 18px; margin-bottom: 10px; }
+.card { background: white; padding: 20px; margin: 15px 0; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; }
+.stat { text-align: center; padding: 15px; }
+.stat-value { font-size: 28px; font-weight: bold; margin: 8px 0; color: #2c3e50; }
+.muted { color: #7f8c8d; font-size: 14px; }
+table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+th { background: #f8f9fa; }
+.table-wrap { overflow-x: auto; }
+.btn { background: #3498db; color: white; border: none; padding: 9px 14px; border-radius: 5px; cursor: pointer; font-size: 14px; }
+.btn:hover { background: #2980b9; }
+.btn:disabled { background: #b2bec3; cursor: not-allowed; }
+.btn.danger { background: #e74c3c; }
+.btn.danger:hover { background: #c0392b; }
+.btn.light { background: #ecf0f1; color: #2c3e50; }
+.btn.light:hover { background: #dfe6e9; }
+.badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 13px; color: white; }
+.badge.done { background: #27ae60; }
+.badge.todo { background: #f39c12; }
+.badge.high { background: #e74c3c; }
+.badge.mid { background: #3498db; }
+.badge.low { background: #95a5a6; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+input, select, textarea { padding: 9px; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; }
+.form { display: grid; gap: 14px; max-width: 520px; }
+.field { display: grid; gap: 5px; }
+.field label { font-weight: bold; font-size: 14px; }
+.error { color: #e74c3c; font-size: 13px; }
+.alert { padding: 12px; margin: 10px 0; border-radius: 5px; border-left: 4px solid; }
+.alert.ok { background: #d5f5e3; border-color: #27ae60; }
+.alert.err { background: #fadbd8; border-color: #e74c3c; }
+.alert.info { background: #ffeaa7; border-color: #fdcb6e; }
+.robots { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 15px; }
+.robot-card { background: white; padding: 18px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+.robot-name { font-size: 18px; font-weight: bold; margin-bottom: 4px; }
+.bar { height: 10px; background: #ecf0f1; border-radius: 5px; margin: 8px 0; overflow: hidden; }
+.bar-fill { height: 100%; background: #3498db; transition: width 0.4s; }
+.done-text { text-decoration: line-through; color: #95a5a6; }
+@media (max-width: 768px) { .app { grid-template-columns: 1fr; } .sidebar { padding: 12px; } .nav { display: flex; flex-wrap: wrap; gap: 5px; } .content { padding: 15px; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useContext, createContext, useMemo } = React;
+const { HashRouter, Route, Switch, NavLink, Redirect, useHistory } = ReactRouterDOM;
+
+const API = 'https://jsonplaceholder.typicode.com';
+const TASK_NAMES = [
+  'Перевезення палет на склад Б', 'Зварювання корпусів, секція 2', 'Планова діагностика сенсорів',
+  'Сканування карти приміщення', 'Заміна акумуляторного блока', 'Сортування посилок на лінії',
+  'Калібрування маніпулятора', 'Інвентаризація стелажів', 'Патрулювання периметра цеху',
+  'Фарбування деталей, партія 14', 'Завантаження вантажу в транспорт', 'Тестування маршруту обходу перешкод'
+];
+const PRIORITIES = ['Високий', 'Середній', 'Низький'];
+const PRIORITY_CLASS = { 'Високий': 'high', 'Середній': 'mid', 'Низький': 'low' };
+
+function addDays(n) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function toRobot(u) {
+  return { id: u.id, name: 'RB-' + String(u.id).padStart(2, '0'), model: u.company.name, place: u.address.city };
+}
+
+function toTask(t) {
+  return {
+    id: t.id,
+    title: TASK_NAMES[t.id % TASK_NAMES.length],
+    robotId: t.userId,
+    priority: PRIORITIES[t.id % 3],
+    deadline: addDays(t.id % 10),
+    done: t.completed
+  };
+}
+
+async function request(path, options) {
+  const res = await fetch(API + path, options);
+  if (!res.ok) throw new Error('Помилка сервера: ' + res.status);
+  return res.json();
+}
+
+const TasksContext = createContext(null);
+
+function TasksProvider({ children }) {
+  const [robots, setRobots] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [status, setStatus] = useState('loading');
+  const [error, setError] = useState('');
+
+  const load = () => {
+    setStatus('loading');
+    Promise.all([request('/users'), request('/todos')])
+      .then(([users, todos]) => {
+        setRobots(users.slice(0, 6).map(toRobot));
+        const taken = {};
+        const chosen = todos.filter(t => {
+          taken[t.userId] = (taken[t.userId] || 0) + 1;
+          return t.userId <= 6 && taken[t.userId] <= 5;
+        });
+        setTasks(chosen.map(toTask));
+        setStatus('ready');
+      })
+      .catch(e => {
+        setError(e.message);
+        setStatus('error');
+      });
+  };
+
+  useEffect(load, []);
+
+  const addTask = async (data) => {
+    const created = await request('/todos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: data.title, userId: data.robotId, completed: false })
+    });
+    const id = Math.max(0, ...tasks.map(t => t.id)) + 1;
+    setTasks(prev => [...prev, { ...data, id, done: false, serverId: created.id }]);
+  };
+
+  const toggleTask = async (task) => {
+    await request('/todos/' + Math.min(task.id, 200), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ completed: !task.done })
+    });
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, done: !t.done } : t));
+  };
+
+  const removeTask = async (task) => {
+    await request('/todos/' + Math.min(task.id, 200), { method: 'DELETE' });
+    setTasks(prev => prev.filter(t => t.id !== task.id));
+  };
+
+  const value = { robots, tasks, status, error, load, addTask, toggleTask, removeTask };
+  return <TasksContext.Provider value={value}>{children}</TasksContext.Provider>;
+}
+
+function useTasks() {
+  return useContext(TasksContext);
+}
+
+function Sidebar() {
+  const items = [
+    ['/', 'Огляд'],
+    ['/tasks', 'Завдання'],
+    ['/new', 'Нове завдання'],
+    ['/robots', 'Платформи']
+  ];
+  return (
+    <div className="sidebar">
+      <div className="logo">Планувальник роботизованих платформ</div>
+      <div className="nav">
+        {items.map(([to, label]) => (
+          <NavLink key={to} exact to={to} className="nav-item" activeClassName="active">{label}</NavLink>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Loader({ children }) {
+  const { status, error, load } = useTasks();
+  if (status === 'loading') return <div className="alert info">Завантаження даних з API...</div>;
+  if (status === 'error') {
+    return (
+      <div className="alert err">
+        {error}. Не вдалося отримати дані.
+        <div style={{ marginTop: 10 }}><button className="btn" onClick={load}>Спробувати ще раз</button></div>
+      </div>
+    );
+  }
+  return children;
+}
+
+function Stat({ label, value }) {
+  return (
+    <div className="card stat">
+      <div className="muted">{label}</div>
+      <div className="stat-value">{value}</div>
+    </div>
+  );
+}
+
+function Dashboard() {
+  const { robots, tasks } = useTasks();
+  const done = tasks.filter(t => t.done).length;
+  const queue = tasks.length - done;
+  const urgent = tasks.filter(t => !t.done && t.priority === 'Високий').length;
+  const nearest = tasks.filter(t => !t.done).sort((a, b) => a.deadline.localeCompare(b.deadline)).slice(0, 5);
+  const robotName = id => (robots.find(r => r.id === id) || {}).name;
+
+  return (
+    <div>
+      <h1>Огляд</h1>
+      <Loader>
+        <div className="stats">
+          <Stat label="Платформ" value={robots.length} />
+          <Stat label="Усього завдань" value={tasks.length} />
+          <Stat label="У черзі" value={queue} />
+          <Stat label="Виконано" value={done} />
+          <Stat label="Термінових" value={urgent} />
+        </div>
+        <div className="card">
+          <h2>Найближчі завдання</h2>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Завдання</th><th>Платформа</th><th>Термін</th><th>Пріоритет</th></tr></thead>
+              <tbody>
+                {nearest.map(t => (
+                  <tr key={t.id}>
+                    <td>{t.title}</td>
+                    <td>{robotName(t.robotId)}</td>
+                    <td>{t.deadline}</td>
+                    <td><span className={'badge ' + PRIORITY_CLASS[t.priority]}>{t.priority}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </Loader>
+    </div>
+  );
+}
+
+function TaskRow({ task, robotName }) {
+  const { toggleTask, removeTask } = useTasks();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const run = async (action) => {
+    setBusy(true);
+    setErr('');
+    try {
+      await action(task);
+    } catch (e) {
+      setErr(e.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <tr>
+      <td className={task.done ? 'done-text' : ''}>{task.title}{err && <div className="error">{err}</div>}</td>
+      <td>{robotName}</td>
+      <td>{task.deadline}</td>
+      <td><span className={'badge ' + PRIORITY_CLASS[task.priority]}>{task.priority}</span></td>
+      <td><span className={'badge ' + (task.done ? 'done' : 'todo')}>{task.done ? 'Виконано' : 'У черзі'}</span></td>
+      <td>
+        <button className="btn light" disabled={busy} onClick={() => run(toggleTask).then(() => setBusy(false))}>
+          {task.done ? 'Повернути' : 'Виконати'}
+        </button>{' '}
+        <button className="btn danger" disabled={busy} onClick={() => run(removeTask)}>Видалити</button>
+      </td>
+    </tr>
+  );
+}
+
+function TaskList() {
+  const { robots, tasks } = useTasks();
+  const [search, setSearch] = useState('');
+  const [robotId, setRobotId] = useState('all');
+  const [state, setState] = useState('all');
+  const robotName = id => (robots.find(r => r.id === id) || {}).name;
+
+  const visible = useMemo(() => tasks.filter(t =>
+    t.title.toLowerCase().includes(search.toLowerCase()) &&
+    (robotId === 'all' || t.robotId === Number(robotId)) &&
+    (state === 'all' || (state === 'done') === t.done)
+  ), [tasks, search, robotId, state]);
+
+  return (
+    <div>
+      <h1>Завдання</h1>
+      <Loader>
+        <div className="card">
+          <div className="toolbar">
+            <input placeholder="Пошук за назвою" value={search} onChange={e => setSearch(e.target.value)} />
+            <select value={robotId} onChange={e => setRobotId(e.target.value)}>
+              <option value="all">Усі платформи</option>
+              {robots.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+            <select value={state} onChange={e => setState(e.target.value)}>
+              <option value="all">Усі статуси</option>
+              <option value="todo">У черзі</option>
+              <option value="done">Виконані</option>
+            </select>
+          </div>
+          <div className="muted">Показано: {visible.length} з {tasks.length}</div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Завдання</th><th>Платформа</th><th>Термін</th><th>Пріоритет</th><th>Статус</th><th>Дії</th></tr></thead>
+              <tbody>
+                {visible.map(t => <TaskRow key={t.id} task={t} robotName={robotName(t.robotId)} />)}
+              </tbody>
+            </table>
+          </div>
+          {visible.length === 0 && <div className="alert info">Завдань за вибраними умовами немає.</div>}
+        </div>
+      </Loader>
+    </div>
+  );
+}
+
+function NewTask() {
+  const { robots, addTask } = useTasks();
+  const history = useHistory();
+  const [form, setForm] = useState({ title: '', robotId: '', priority: 'Середній', deadline: addDays(1) });
+  const [errors, setErrors] = useState({});
+  const [sending, setSending] = useState(false);
+  const [serverError, setServerError] = useState('');
+
+  const change = e => {
+    setForm({ ...form, [e.target.name]: e.target.value });
+    setErrors({ ...errors, [e.target.name]: '' });
+  };
+
+  const validate = () => {
+    const err = {};
+    if (form.title.trim().length < 3) err.title = 'Назва має містити щонайменше 3 символи';
+    if (!form.robotId) err.robotId = 'Виберіть платформу';
+    if (!form.deadline) err.deadline = 'Вкажіть термін виконання';
+    else if (form.deadline < addDays(0)) err.deadline = 'Термін не може бути в минулому';
+    return err;
+  };
+
+  const submit = async e => {
+    e.preventDefault();
+    const err = validate();
+    setErrors(err);
+    if (Object.keys(err).length) return;
+    setSending(true);
+    setServerError('');
+    try {
+      await addTask({ title: form.title.trim(), robotId: Number(form.robotId), priority: form.priority, deadline: form.deadline });
+      history.push('/tasks');
+    } catch (e) {
+      setServerError(e.message);
+      setSending(false);
+    }
+  };
+
+  return (
+    <div>
+      <h1>Нове завдання</h1>
+      <Loader>
+        <div className="card">
+          <form className="form" onSubmit={submit} noValidate>
+            <div className="field">
+              <label>Назва завдання</label>
+              <input name="title" value={form.title} onChange={change} placeholder="Наприклад, перевезення палет" />
+              {errors.title && <span className="error">{errors.title}</span>}
+            </div>
+            <div className="field">
+              <label>Платформа</label>
+              <select name="robotId" value={form.robotId} onChange={change}>
+                <option value="">Оберіть платформу</option>
+                {robots.map(r => <option key={r.id} value={r.id}>{r.name} ({r.model})</option>)}
+              </select>
+              {errors.robotId && <span className="error">{errors.robotId}</span>}
+            </div>
+            <div className="field">
+              <label>Пріоритет</label>
+              <select name="priority" value={form.priority} onChange={change}>
+                {PRIORITIES.map(p => <option key={p}>{p}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Термін виконання</label>
+              <input type="date" name="deadline" value={form.deadline} onChange={change} />
+              {errors.deadline && <span className="error">{errors.deadline}</span>}
+            </div>
+            {serverError && <div className="alert err">{serverError}</div>}
+            <div><button className="btn" type="submit" disabled={sending}>{sending ? 'Надсилання...' : 'Додати до плану'}</button></div>
+          </form>
+        </div>
+      </Loader>
+    </div>
+  );
+}
+
+function Robots() {
+  const { robots, tasks, load } = useTasks();
+  return (
+    <div>
+      <h1>Платформи</h1>
+      <div className="toolbar"><button className="btn" onClick={load}>Оновити з API</button></div>
+      <Loader>
+        <div className="robots">
+          {robots.map(r => {
+            const own = tasks.filter(t => t.robotId === r.id);
+            const done = own.filter(t => t.done).length;
+            const percent = own.length ? Math.round(done / own.length * 100) : 0;
+            return (
+              <div className="robot-card" key={r.id}>
+                <div className="robot-name">{r.name}</div>
+                <div className="muted">{r.model}</div>
+                <div className="muted">Розташування: {r.place}</div>
+                <div className="bar"><div className="bar-fill" style={{ width: percent + '%' }}></div></div>
+                <div>Виконано {done} з {own.length} ({percent}%)</div>
+                <div style={{ marginTop: 8 }}>
+                  <span className={'badge ' + (own.length - done > 0 ? 'todo' : 'done')}>
+                    {own.length - done > 0 ? 'Має завдання' : 'Вільна'}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Loader>
+    </div>
+  );
+}
+
+function NotFound() {
+  return (
+    <div>
+      <h1>Сторінку не знайдено</h1>
+      <div className="alert info">Такої сторінки немає. Поверніться на головну.</div>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <TasksProvider>
+      <HashRouter>
+        <div className="app">
+          <Sidebar />
+          <div className="content">
+            <Switch>
+              <Route exact path="/" component={Dashboard} />
+              <Route path="/tasks" component={TaskList} />
+              <Route path="/new" component={NewTask} />
+              <Route path="/robots" component={Robots} />
+              <Route path="/home"><Redirect to="/" /></Route>
+              <Route component={NotFound} />
+            </Switch>
+          </div>
+        </div>
+      </HashRouter>
+    </TasksProvider>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>
